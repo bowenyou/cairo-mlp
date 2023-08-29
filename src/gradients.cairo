@@ -14,6 +14,8 @@ use orion::numbers::fixed_point::{
     implementations::fp16x16::core::{FP16x16Impl, FP16x16Div, FP16x16PartialOrd}
 };
 
+use cairo_mlp::utils::print_shape;
+
 fn sigmoid_grad(input: Tensor<FixedType>) -> Tensor<FixedType> {
     let extra = ExtraParams { fixed_point: Option::Some(FixedImpl::FP16x16(())) };
     let one = TensorTrait::new(
@@ -25,14 +27,14 @@ fn sigmoid_grad(input: Tensor<FixedType>) -> Tensor<FixedType> {
     return NNTrait::sigmoid(@input) * (one - NNTrait::sigmoid(@input));
 }
 
-fn linear_weights_grad(weights: Tensor<FixedType>) -> Tensor<FixedType> {
-    return weights.transpose(axes: array![1, 0].span());
+fn linear_weights_grad(input: Tensor<FixedType>) -> Tensor<FixedType> {
+    return input;
 }
 
-fn linear_bias_grad(bias: Tensor<FixedType>) -> Tensor<FixedType> {
+fn linear_bias_grad(input: Tensor<FixedType>) -> Tensor<FixedType> {
     let extra = ExtraParams { fixed_point: Option::Some(FixedImpl::FP16x16(())) };
 
-    let tensor_size = bias.data.len();
+    let tensor_size = input.data.len();
     let mut ones_data = ArrayTrait::<FixedType>::new();
     let mut i = 0_u32;
     loop {
@@ -43,7 +45,7 @@ fn linear_bias_grad(bias: Tensor<FixedType>) -> Tensor<FixedType> {
         i += 1;
     };
     let ones = TensorTrait::new(
-        shape: array![1].span(), data: ones_data.span(), extra: Option::Some(extra),
+        shape: array![tensor_size].span(), data: ones_data.span(), extra: Option::Some(extra),
     );
 
     return ones;

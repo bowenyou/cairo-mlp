@@ -16,6 +16,10 @@ use orion::numbers::fixed_point::{
 
 use cairo_mlp::network::{network, LayerImpl};
 
+fn mse_loss_grad(y: Tensor<FixedType>, y_pred: Tensor<FixedType>) -> Array<Tensor<FixedType>> {
+    return array![y - y_pred];
+}
+
 fn example() -> Tensor<FixedType> {
     let extra = ExtraParams { fixed_point: Option::Some(FixedImpl::FP16x16(())) };
 
@@ -29,56 +33,23 @@ fn example() -> Tensor<FixedType> {
         extra: Option::Some(extra)
     );
 
-    // We instantiate weights here.
-    let weights = TensorTrait::<FixedType>::new(
-        shape: array![2, 3].span(),
-        data: array![
-            FixedTrait::new(8, true),
-            FixedTrait::new(64, false),
-            FixedTrait::new(40, false),
-            FixedTrait::new(33, true),
-            FixedTrait::new(34, true),
-            FixedTrait::new(20, true),
-        ]
-            .span(),
-        extra: Option::Some(extra)
-    );
-
-    let weights2 = TensorTrait::<FixedType>::new(
-        shape: array![3, 2].span(),
-        data: array![
-            FixedTrait::new(8, true),
-            FixedTrait::new(64, false),
-            FixedTrait::new(40, false),
-            FixedTrait::new(33, true),
-            FixedTrait::new(34, true),
-            FixedTrait::new(20, true),
-        ]
-            .span(),
-        extra: Option::Some(extra)
-    );
-
-    // We instantiate bias here.
-    let bias = TensorTrait::<FixedType>::new(
-        shape: array![2].span(),
-        data: array![FixedTrait::new(61, false), FixedTrait::new(61, true),].span(),
-        extra: Option::Some(extra)
-    );
-
-    let bias2 = TensorTrait::<FixedType>::new(
+    let y = TensorTrait::<FixedType>::new(
         shape: array![3].span(),
         data: array![
-            FixedTrait::new(61, false), FixedTrait::new(61, true), FixedTrait::new(61, true)
+            FixedTrait::new(71, true), FixedTrait::new(38, false), FixedTrait::new(62, false),
         ]
             .span(),
         extra: Option::Some(extra)
     );
 
     let mut layers = network();
+
+    let mut layers_span = layers.span();
     let n_layers = layers.span().len();
 
     let mut i = 0_u32;
 
+    let mut cached_output = ArrayTrait::<Tensor<FixedType>>::new();
     let mut current_output = inputs;
 
     loop {
@@ -86,10 +57,25 @@ fn example() -> Tensor<FixedType> {
             break ();
         }
 
-        let current_layer = layers.pop_front().unwrap();
-        current_output = current_layer.forward(current_output);
+        let current_layer = layers_span.pop_front().unwrap();
+        current_output = (*current_layer).forward(current_output);
         i += 1;
     };
+
+    layers_span = layers.span();
+
+    let mut current_gradients = ArrayTrait::<Array<Tensor<FixedType>>>::new();
+
+    current_gradients.append(mse_loss_grad(y, current_output));
+    let err = y - current_output;
+    loop {
+        if layers_span.len() == 0 {
+            break ();
+        }
+
+        let current_layer = layers_span.pop_back().unwrap();
+        current_gradients.append((*current_layer).gradient(err));
+    }; 
 
     return current_output;
 }
@@ -97,5 +83,6 @@ fn example() -> Tensor<FixedType> {
 #[test]
 #[available_gas(99999999999999999)]
 fn test() {
+    
     example();
 }

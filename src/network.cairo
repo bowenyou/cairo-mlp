@@ -15,19 +15,21 @@ use orion::numbers::fixed_point::{
 };
 
 use cairo_mlp::gradients::{sigmoid_grad, linear_weights_grad, linear_bias_grad};
+use cairo_mlp::utils::print_shape;
 
-#[derive(Drop)]
+
+#[derive(Copy, Drop)]
 enum Layer {
     // (Tensor<FixedType>, Tensor<FixedType>) -> (weights, bias)
     Linear: (Tensor<FixedType>, Tensor<FixedType>),
-    Sigmoid: ()
+    Sigmoid: (),
 }
 
-#[derive(Drop)]
+#[derive(Copy, Drop)]
 enum InitializeLayer {
     // (dim_in, dim_out)
     Linear: (u32, u32),
-    Sigmoid: ()
+    Sigmoid: (),
 }
 
 trait LayerTrait {
@@ -48,7 +50,7 @@ impl LayerImpl of LayerTrait {
             Layer::Sigmoid(()) => {
                 'sigmoid layer forward pass'.print();
                 return NNTrait::sigmoid(@input);
-            }
+            },
         }
     }
 
@@ -56,20 +58,20 @@ impl LayerImpl of LayerTrait {
         let extra = ExtraParams { fixed_point: Option::Some(FixedImpl::FP16x16(())) };
         match self {
             InitializeLayer::Linear((
-                dim_in, dim_out
+                dim_out, dim_in
             )) => {
                 let mut i = 0_u32;
                 let mut bias_data = ArrayTrait::<FixedType>::new();
                 let mut weights_data = ArrayTrait::<FixedType>::new();
 
                 loop {
-                    if i >= dim_in {
+                    if i >= dim_out {
                         break ();
                     }
                     bias_data.append(FixedTrait::new(0, false));
                     let mut j = 0_u32;
                     loop {
-                        if j >= dim_out {
+                        if j >= dim_in {
                             break ();
                         }
                         weights_data.append(FixedTrait::new(0, false));
@@ -79,20 +81,22 @@ impl LayerImpl of LayerTrait {
                 };
 
                 let weights = TensorTrait::<FixedType>::new(
-                    shape: array![dim_in, dim_out].span(),
+                    shape: array![dim_out, dim_in].span(),
                     data: weights_data.span(),
                     extra: Option::Some(extra)
                 );
 
                 let bias = TensorTrait::<FixedType>::new(
-                    shape: array![dim_in].span(), data: bias_data.span(), extra: Option::Some(extra)
+                    shape: array![dim_out].span(),
+                    data: bias_data.span(),
+                    extra: Option::Some(extra)
                 );
 
                 return Layer::Linear((weights, bias));
             },
             InitializeLayer::Sigmoid(()) => {
                 return Layer::Sigmoid(());
-            }
+            },
         }
     }
 
@@ -101,11 +105,13 @@ impl LayerImpl of LayerTrait {
             Layer::Linear((
                 weights, bias
             )) => {
-                return array![linear_weights_grad(weights), linear_bias_grad(bias)];
+                'got linear gradient'.print();
+                return array![linear_weights_grad(input), linear_bias_grad(input)];
             },
             Layer::Sigmoid(()) => {
+                'got sigmoid gradient'.print();
                 return array![sigmoid_grad(input)];
-            }
+            },
         }
     }
 }
@@ -113,9 +119,10 @@ impl LayerImpl of LayerTrait {
 
 fn network() -> Array<Layer> {
     let mut layers = ArrayTrait::<Layer>::new();
-    layers.append(InitializeLayer::Linear((2, 3)).initialize());
-    layers.append(InitializeLayer::Sigmoid(()).initialize());
-    layers.append(InitializeLayer::Linear((3, 2)).initialize());
+
+    // 3x1
+    layers.append(InitializeLayer::Linear((3, 3)).initialize());
+    // 2x1
     layers.append(InitializeLayer::Sigmoid(()).initialize());
 
     return layers;
