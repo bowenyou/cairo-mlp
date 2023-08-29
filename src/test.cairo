@@ -14,33 +14,7 @@ use orion::numbers::fixed_point::{
     implementations::fp16x16::core::{FP16x16Impl, FP16x16Div, FP16x16PartialOrd}
 };
 
-#[derive(Drop)]
-enum Layer {
-    // (Tensor<FixedType>, Tensor<FixedType>) -> (weights, bias)
-    Linear: (Tensor<FixedType>, Tensor<FixedType>),
-    Sigmoid: ()
-}
-
-trait ForwardTrait {
-    fn forward(self: Layer, input: Tensor<FixedType>) -> Tensor<FixedType>;
-}
-
-impl ForwardImpl of ForwardTrait {
-    fn forward(self: Layer, input: Tensor<FixedType>) -> Tensor<FixedType> {
-        match self {
-            Layer::Linear((
-                theta, bias
-            )) => {
-                'linear layer forward pass'.print();
-                return NNTrait::linear(input, theta, bias);
-            },
-            Layer::Sigmoid(()) => {
-                'sigmoid layer forward pass'.print();
-                return NNTrait::sigmoid(@input);
-            }
-        }
-    }
-}
+use cairo_mlp::network::{network, LayerImpl};
 
 fn example() -> Tensor<FixedType> {
     let extra = ExtraParams { fixed_point: Option::Some(FixedImpl::FP16x16(())) };
@@ -100,11 +74,7 @@ fn example() -> Tensor<FixedType> {
         extra: Option::Some(extra)
     );
 
-    let mut layers = ArrayTrait::<Layer>::new();
-    layers.append(Layer::Linear((weights, bias)));
-    layers.append(Layer::Linear((weights2, bias2)));
-    layers.append(Layer::Sigmoid(()));
-
+    let mut layers = network();
     let n_layers = layers.span().len();
 
     let mut i = 0_u32;
@@ -123,7 +93,6 @@ fn example() -> Tensor<FixedType> {
 
     return current_output;
 }
-
 
 #[test]
 #[available_gas(99999999999999999)]

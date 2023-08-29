@@ -14,6 +14,8 @@ use orion::numbers::fixed_point::{
     implementations::fp16x16::core::{FP16x16Impl, FP16x16Div, FP16x16PartialOrd}
 };
 
+use cairo_mlp::gradients::{sigmoid_grad, linear_weights_grad, linear_bias_grad};
+
 #[derive(Drop)]
 enum Layer {
     // (Tensor<FixedType>, Tensor<FixedType>) -> (weights, bias)
@@ -23,13 +25,15 @@ enum Layer {
 
 #[derive(Drop)]
 enum InitializeLayer {
+    // (dim_in, dim_out)
     Linear: (u32, u32),
     Sigmoid: ()
 }
 
 trait LayerTrait {
     fn forward(self: Layer, input: Tensor<FixedType>) -> Tensor<FixedType>;
-    fn initialize(self: InitializeParams) -> Layer;
+    fn initialize(self: InitializeLayer) -> Layer;
+    fn gradient(self: Layer, input: Tensor<FixedType>) -> Array<Tensor<FixedType>>;
 }
 
 impl LayerImpl of LayerTrait {
@@ -47,14 +51,16 @@ impl LayerImpl of LayerTrait {
             }
         }
     }
-    fn initialize(self: InitializeParams) -> Layer {
+
+    fn initialize(self: InitializeLayer) -> Layer {
+        let extra = ExtraParams { fixed_point: Option::Some(FixedImpl::FP16x16(())) };
         match self {
             InitializeLayer::Linear((
                 dim_in, dim_out
             )) => {
                 let mut i = 0_u32;
-                let mut bias_data = ArrayTrait::<FixedTrait>::new();
-                let mut weights_data = ArrayTrait::<FixedTrait>::new();
+                let mut bias_data = ArrayTrait::<FixedType>::new();
+                let mut weights_data = ArrayTrait::<FixedType>::new();
 
                 loop {
                     if i >= dim_in {
@@ -89,8 +95,28 @@ impl LayerImpl of LayerTrait {
             }
         }
     }
+
+    fn gradient(self: Layer, input: Tensor<FixedType>) -> Array<Tensor<FixedType>> {
+        match self {
+            Layer::Linear((
+                weights, bias
+            )) => {
+                return array![linear_weights_grad(weights), linear_bias_grad(bias)];
+            },
+            Layer::Sigmoid(()) => {
+                return array![sigmoid_grad(input)];
+            }
+        }
+    }
 }
 
 
-fn network() -> ArrayTrait::<Layers> {}
+fn network() -> Array<Layer> {
+    let mut layers = ArrayTrait::<Layer>::new();
+    layers.append(InitializeLayer::Linear((2, 3)).initialize());
+    layers.append(InitializeLayer::Sigmoid(()).initialize());
+    layers.append(InitializeLayer::Linear((3, 2)).initialize());
+    layers.append(InitializeLayer::Sigmoid(()).initialize());
 
+    return layers;
+}
