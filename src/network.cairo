@@ -17,6 +17,7 @@ use orion::numbers::fixed_point::{
 use cairo_mlp::gradients::{linear_weights_grad, linear_bias_grad, softmax_grad};
 
 // Layer struct with parameters: LayerType, weights, bias, gradient
+#[derive(Drop, Copy)]
 struct Layer {
     layer_type: LayerType,
     old_weights: Option<Tensor<FixedType>>,
@@ -115,23 +116,23 @@ impl LayerImpl of Layer {
         match mut self.layer_type {
             LayerType::Linear(weights, bias) => {
                 self.old_weights = Some(weights);
-                weights = weights - learning_rate * linear_weights_grad(weights);
-                bias = bias - learning_rate * linear_bias_grad(bias));
+                self.weights = weights - learning_rate * linear_weights_grad(weights);
+                self.bias = bias - learning_rate * linear_bias_grad(bias));
             }
             LayerType::Softmax(weights) => {
                 self.old_weights = Some(weights);
-                weights = weights - learning_rate * self.gradient;
+                self.weights = weights - learning_rate * self.gradient;
             }
         }
     }
 }
 
 fn dummy_weights(input_size: u32, output_size: u32) -> Tensor<FixedType> {
-    let mut value = 0.0;
+    let mut value = 0;
     let mut count = 0;
-    let total_count = (input_size * output_size) as usize;
+    let total_count = (input_size * output_size);
     
-    let mut weights_data = ArrayTrait::new();
+    let mut weights_data = ArrayTrait::<FixedType>::new();
     
     loop {
         if count >= total_count {
@@ -139,9 +140,9 @@ fn dummy_weights(input_size: u32, output_size: u32) -> Tensor<FixedType> {
         }
 
         weights_data.push(FixedType::from(value)); 
-        value += 0.01;  
-        count += 1;
-    }
+        value = value + 1;  
+        count = count + 1;
+    };
 
     TensorTrait::<FixedType>::new(
         shape: array![input_size, output_size].span(),
