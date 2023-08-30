@@ -16,17 +16,6 @@ use orion::numbers::fixed_point::{
 
 use cairo_mlp::utils::print_shape;
 
-fn sigmoid_grad(input: Tensor<FixedType>) -> Tensor<FixedType> {
-    let extra = ExtraParams { fixed_point: Option::Some(FixedImpl::FP16x16(())) };
-    let one = TensorTrait::new(
-        shape: array![1].span(),
-        data: array![FixedTrait::new(65536, false)].span(),
-        extra: Option::Some(extra),
-    );
-
-    return NNTrait::sigmoid(@input) * (one - NNTrait::sigmoid(@input));
-}
-
 fn linear_weights_grad(input: Tensor<FixedType>) -> Tensor<FixedType> {
     return input;
 }
@@ -49,4 +38,16 @@ fn linear_bias_grad(input: Tensor<FixedType>) -> Tensor<FixedType> {
     );
 
     return ones;
+}
+
+fn softmax_grad(input: Tensor<FixedType>) -> Tensor<FixedType> {
+    let extra = ExtraParams { fixed_point: Option::Some(FixedImpl::FP16x16(())) };
+    let one = TensorTrait::new(
+        shape: array![1].span(),
+        data: array![FixedTrait::new(65536, false)].span(),
+        extra: Option::Some(extra),
+    );
+
+    let softmax = NNTrait::softmax(@input, 0);
+    return softmax * (one - softmax);
 }

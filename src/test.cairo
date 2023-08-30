@@ -20,6 +20,7 @@ fn mse_loss_grad(y: Tensor<FixedType>, y_pred: Tensor<FixedType>) -> Array<Tenso
     return array![y - y_pred];
 }
 
+// TODO: implement softmax 
 fn example() -> Tensor<FixedType> {
     let extra = ExtraParams { fixed_point: Option::Some(FixedImpl::FP16x16(())) };
 
@@ -74,7 +75,7 @@ fn example() -> Tensor<FixedType> {
         }
 
         let current_layer = layers_span.pop_back().unwrap();
-        current_gradients.append((*current_layer).gradient(err));
+        current_gradients.append((current_layer).gradient(err));
     }; 
 
     return current_output;
