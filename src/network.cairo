@@ -1,5 +1,6 @@
 use debug::PrintTrait;
 use array::{ArrayTrait, SpanTrait};
+use option::OptionTrait;
 use orion::operators::{
     tensor::{
         core::{Tensor, TensorTrait, ExtraParams},
@@ -13,51 +14,30 @@ use orion::numbers::fixed_point::{
     core::{FixedTrait, FixedType, FixedImpl},
     implementations::fp16x16::core::{FP16x16Impl, FP16x16Div, FP16x16PartialOrd}
 };
-
 use cairo_mlp::gradients::{linear_weights_grad, linear_bias_grad, softmax_grad};
 
+// Layer struct with parameters: LayerType, weights, bias, gradient
+struct Layer {
+    layer_type: LayerType,
+    old_weights: Option<Tensor<FixedType>>,
+    weights: Tensor<FixedType>,
+    bias: Tensor<FixedType>,
+    gradient: Tensor<FixedType>,
+}
+
+// implementation with previous functions + update weights function
 #[derive(Drop)]
-enum Layer {
+enum LayerType {
     // (Tensor<FixedType>, Tensor<FixedType>) -> (weights, bias)
     Linear: (Tensor<FixedType>, Tensor<FixedType>),
     // Tensor<FixedType> -> (weights)
-    Softmax: (Tensor<FixedType>),
+    Softmax: Tensor<FixedType>
 }
 
-#[derive(Drop)]
-enum InitializeLayer {
-    // (dim_in, dim_out)
-    Linear: (u32, u32),
-    Softmax: (),
-}
-
-trait LayerTrait {
-    fn forward(self: Layer, input: Tensor<FixedType>) -> Tensor<FixedType>;
-    fn initialize(self: InitializeLayer) -> Layer;
-    fn gradient(self: Layer, input: Tensor<FixedType>) -> Array<Tensor<FixedType>>;
-    fn backprop(self: Layer) -> Array<Tensor<FixedType>>;
-}
-
-impl LayerImpl of LayerTrait {
-    fn forward(self: Layer, input: Tensor<FixedType>) -> Tensor<FixedType> {
-        match self {
-            Layer::Linear((
-                theta, bias
-            )) => {
-                "linear layer forward pass".print();
-                return NNTrait::linear(input, theta, bias);
-            },
-            Layer::Softmax((softmax_input)) => {
-                "softmax layer forward pass".print();
-                return NNTrait::softmax(softmax_input, 0);
-            }
-        }
-    }
-
-    fn initialize(self: InitializeLayer) -> Layer {
-        let extra = ExtraParams { fixed_point: Option::Some(FixedImpl::FP16x16(())) };
-        match self {
-            InitializeLayer::Linear((
+impl LayerImpl of Layer {
+    fn initialize(layer_type: LayerType, input_size: u32, output_size: u32) -> Self {
+        match layer_type {
+            LayerType::Linear((
                 dim_in, dim_out
             )) => {
                 let mut i = 0_u32;
@@ -90,40 +70,83 @@ impl LayerImpl of LayerTrait {
                     shape: array![dim_in].span(), data: bias_data.span(), extra: Option::Some(extra)
                 );
 
-                return Layer::Linear((weights, bias));
+                Layer {
+                    layer_type: LayerType::Linear(weights, bias),
+                    old_weights: None,
+                    weights,
+                    bias,
+                    gradient: Tensor::new_zeros(output_size),
+                }
             },
-            InitializeLayer::Softmax((softmax_input)) => {
-                return Layer::Softmax((softmax_input));
+            LayerType::Softmax => {
+                let weights = dummy_weights(input_size, output_size);
+                Layer {
+                    layer_type: LayerType::Softmax(weights),
+                    old_weights: None,
+                    weights,
+                    bias: Tensor::new_zeros(output_size), 
+                    gradient: Tensor::new_zeros(output_size),
+                }
             }
         }
     }
 
-    fn gradient(self: Layer, input: Tensor<FixedType>) -> Array<Tensor<FixedType>> {
-        match self {
-            Layer::Linear((
-                weights, bias
-            )) => {
-                return array![linear_weights_grad(weights), linear_bias_grad(bias)];
-            },
-            Layer::Softmax((softmax_input)) => {
-                return array![softmax_grad(softmax_input)];
+    fn forward(self, input: Tensor<FixedType>) -> Tensor<FixedType> {
+        match self.layer_type {
+            LayerType::Linear(weights, bias) => NNTrait::linear(input, weights, bias),
+            LayerType::Softmax(weights) => NNTrait::softmax(input.matmul(weights)),
+        }
+    }
+
+    fn gradient(mut self, dloss: Tensor<FixedType>) {
+        match self.layer_type {
+            LayerType::Linear(weights, bias) => {
+                self.gradient = dloss * linear_weights_grad(weights);
+            }
+            LayerType::Softmax(weights) => {
+                self.gradient = dloss * softmax_grad(weights); 
             }
         }
     }
 
-    fn backprop(self: Layer, dloss: Tensor<FixedType>) -> Array<Tensor<FixedType>> {
+    fn backprop(mut self, dloss: Tensor<FixedType>, learning_rate: f64) {
+        self.gradient(dloss);
 
+        match mut self.layer_type {
+            LayerType::Linear(weights, bias) => {
+                self.old_weights = Some(weights);
+                weights = weights - learning_rate * linear_weights_grad(weights);
+                bias = bias - learning_rate * linear_bias_grad(bias));
+            }
+            LayerType::Softmax(weights) => {
+                self.old_weights = Some(weights);
+                weights = weights - learning_rate * self.gradient;
+            }
+        }
     }
+}
+
+fn dummy_weights(input_size: u32, output_size: u32) -> Tensor<FixedType> {
+    let mut value = 0.0;
+    let mut count = 0;
+    let total_count = (input_size * output_size) as usize;
     
+    let mut weights_data = ArrayTrait::new();
+    
+    loop {
+        if count >= total_count {
+            break;
+        }
+
+        weights_data.push(FixedType::from(value)); 
+        value += 0.01;  
+        count += 1;
+    }
+
+    TensorTrait::<FixedType>::new(
+        shape: array![input_size, output_size].span(),
+        data: weights_data.span(),
+        extra: Option::Some(0)
+    )
 }
 
-
-fn network() -> Array<Layer> {
-    let mut layers = ArrayTrait::<Layer>::new();
-    layers.append(InitializeLayer::Linear((2, 3)).initialize());
-    layers.append(InitializeLayer::Softmax(()).initialize());
-    layers.append(InitializeLayer::Linear((3, 2)).initialize());
-    layers.append(InitializeLayer::Softmax(()).initialize());
-
-    return layers;
-}
